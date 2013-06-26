@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 #include "bloom.h"
-#include "main.h"
+#include "core.h"
 #include "script.h"
 
 #define LN2SQUARED 0.4804530139182014246671025263266649717305529515945455
@@ -37,6 +37,8 @@ inline unsigned int CBloomFilter::Hash(unsigned int nHashNum, const std::vector<
 
 void CBloomFilter::insert(const vector<unsigned char>& vKey)
 {
+    if (vData.size() == 1 && vData[0] == 0xff)
+        return;
     for (unsigned int i = 0; i < nHashFuncs; i++)
     {
         unsigned int nIndex = Hash(i, vKey);
@@ -61,6 +63,8 @@ void CBloomFilter::insert(const uint256& hash)
 
 bool CBloomFilter::contains(const vector<unsigned char>& vKey) const
 {
+    if (vData.size() == 1 && vData[0] == 0xff)
+        return true;
     for (unsigned int i = 0; i < nHashFuncs; i++)
     {
         unsigned int nIndex = Hash(i, vKey);

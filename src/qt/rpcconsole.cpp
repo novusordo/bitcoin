@@ -6,11 +6,11 @@
 #include "guiutil.h"
 
 #include <QTime>
-#include <QTimer>
 #include <QThread>
-#include <QTextEdit>
 #include <QKeyEvent>
+#if QT_VERSION < 0x050000
 #include <QUrl>
+#endif
 #include <QScrollBar>
 
 #include <openssl/crypto.h>
@@ -35,22 +35,18 @@ const struct {
 
 /* Object for executing console RPC commands in a separate thread.
 */
-class RPCExecutor: public QObject
+class RPCExecutor : public QObject
 {
     Q_OBJECT
+
 public slots:
-    void start();
     void request(const QString &command);
+
 signals:
     void reply(int category, const QString &command);
 };
 
 #include "rpcconsole.moc"
-
-void RPCExecutor::start()
-{
-   // Nothing to do
-}
 
 /**
  * Split shell command line into a list of arguments. Aims to emulate \c bash and friends.
@@ -187,6 +183,7 @@ void RPCExecutor::request(const QString &command)
 RPCConsole::RPCConsole(QWidget *parent) :
     QDialog(parent),
     ui(new Ui::RPCConsole),
+    clientModel(0),
     historyPtr(0)
 {
     ui->setupUi(this);
@@ -257,8 +254,11 @@ void RPCConsole::setClientModel(ClientModel *model)
     this->clientModel = model;
     if(model)
     {
-        // Subscribe to information, replies, messages, errors
+        // Keep up to date with client
+        setNumConnections(model->getNumConnections());
         connect(model, SIGNAL(numConnectionsChanged(int)), this, SLOT(setNumConnections(int)));
+
+        setNumBlocks(model->getNumBlocks(), model->getNumBlocksOfPeers());
         connect(model, SIGNAL(numBlocksChanged(int,int)), this, SLOT(setNumBlocks(int,int)));
 
         // Provide initial values
@@ -267,7 +267,6 @@ void RPCConsole::setClientModel(ClientModel *model)
         ui->buildDate->setText(model->formatBuildDate());
         ui->startupTime->setText(model->formatClientStartupTime());
 
-        setNumConnections(model->getNumConnections());
         ui->isTestNet->setChecked(model->isTestNet());
     }
 }
@@ -384,16 +383,15 @@ void RPCConsole::browseHistory(int offset)
 
 void RPCConsole::startExecutor()
 {
-    QThread* thread = new QThread;
+    QThread *thread = new QThread;
     RPCExecutor *executor = new RPCExecutor();
     executor->moveToThread(thread);
 
-    // Notify executor when thread started (in executor thread)
-    connect(thread, SIGNAL(started()), executor, SLOT(start()));
     // Replies from executor object must go to this object
     connect(executor, SIGNAL(reply(int,QString)), this, SLOT(message(int,QString)));
     // Requests from this object must go to executor
     connect(this, SIGNAL(cmdRequest(QString)), executor, SLOT(request(QString)));
+
     // On stopExecutor signal
     // - queue executor for deletion (in execution thread)
     // - quit the Qt event loop in the execution thread

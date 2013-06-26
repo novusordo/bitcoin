@@ -30,7 +30,7 @@ sign_multisig(CScript scriptPubKey, vector<CKey> keys, CTransaction transaction,
 
     CScript result;
     result << OP_0; // CHECKMULTISIG bug workaround
-    BOOST_FOREACH(CKey key, keys)
+    BOOST_FOREACH(const CKey &key, keys)
     {
         vector<unsigned char> vchSig;
         BOOST_CHECK(key.Sign(hash, vchSig));
@@ -216,7 +216,7 @@ BOOST_AUTO_TEST_CASE(multisig_Solver1)
         CScript s;
         s << OP_2 << key[0].GetPubKey() << key[1].GetPubKey() << OP_2 << OP_CHECKMULTISIG;
         BOOST_CHECK(Solver(s, whichType, solutions));
-        BOOST_CHECK_EQUAL(solutions.size(), 4);
+        BOOST_CHECK_EQUAL(solutions.size(), 4U);
         CTxDestination addr;
         BOOST_CHECK(!ExtractDestination(s, addr));
         BOOST_CHECK(IsMine(keystore, s));
@@ -229,7 +229,7 @@ BOOST_AUTO_TEST_CASE(multisig_Solver1)
         CScript s;
         s << OP_1 << key[0].GetPubKey() << key[1].GetPubKey() << OP_2 << OP_CHECKMULTISIG;
         BOOST_CHECK(Solver(s, whichType, solutions));
-        BOOST_CHECK_EQUAL(solutions.size(), 4);
+        BOOST_CHECK_EQUAL(solutions.size(), 4U);
         vector<CTxDestination> addrs;
         int nRequired;
         BOOST_CHECK(ExtractDestinations(s, whichType, addrs, nRequired));
