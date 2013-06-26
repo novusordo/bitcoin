@@ -1,11 +1,14 @@
 #include "clientmodel.h"
+
 #include "guiconstants.h"
 #include "optionsmodel.h"
 #include "addresstablemodel.h"
 #include "transactiontablemodel.h"
 
+#include "chainparams.h"
 #include "alert.h"
 #include "main.h"
+#include "checkpoints.h"
 #include "ui_interface.h"
 
 #include <QDateTime>
@@ -15,7 +18,9 @@ static const int64 nClientStartupTime = GetTime();
 
 ClientModel::ClientModel(OptionsModel *optionsModel, QObject *parent) :
     QObject(parent), optionsModel(optionsModel),
-    cachedNumBlocks(0), cachedNumBlocksOfPeers(0), numBlocksAtStartup(-1), pollTimer(0)
+    cachedNumBlocks(0), cachedNumBlocksOfPeers(0),
+    cachedReindexing(0), cachedImporting(0),
+    numBlocksAtStartup(-1), pollTimer(0)
 {
     pollTimer = new QTimer(this);
     pollTimer->setInterval(MODEL_UPDATE_DELAY);
@@ -48,7 +53,17 @@ int ClientModel::getNumBlocksAtStartup()
 
 QDateTime ClientModel::getLastBlockDate() const
 {
-    return QDateTime::fromTime_t(pindexBest->GetBlockTime());
+    if (pindexBest)
+        return QDateTime::fromTime_t(pindexBest->GetBlockTime());
+    else if(!isTestNet())
+        return QDateTime::fromTime_t(1231006505); // Genesis block's time
+    else
+        return QDateTime::fromTime_t(1296688602); // Genesis block's time (testnet)
+}
+
+double ClientModel::getVerificationProgress() const
+{
+    return Checkpoints::GuessVerificationProgress(pindexBest);
 }
 
 void ClientModel::updateTimer()
@@ -58,10 +73,14 @@ void ClientModel::updateTimer()
     int newNumBlocks = getNumBlocks();
     int newNumBlocksOfPeers = getNumBlocksOfPeers();
 
-    if(cachedNumBlocks != newNumBlocks || cachedNumBlocksOfPeers != newNumBlocksOfPeers)
+    // check for changed number of blocks we have, number of blocks peers claim to have, reindexing state and importing state
+    if (cachedNumBlocks != newNumBlocks || cachedNumBlocksOfPeers != newNumBlocksOfPeers ||
+        cachedReindexing != fReindex || cachedImporting != fImporting)
     {
         cachedNumBlocks = newNumBlocks;
         cachedNumBlocksOfPeers = newNumBlocksOfPeers;
+        cachedReindexing = fReindex;
+        cachedImporting = fImporting;
 
         // ensure we return the maximum of newNumBlocksOfPeers and newNumBlocks to not create weird displays in the GUI
         emit numBlocksChanged(newNumBlocks, std::max(newNumBlocksOfPeers, newNumBlocks));
@@ -92,7 +111,7 @@ void ClientModel::updateAlert(const QString &hash, int status)
 
 bool ClientModel::isTestNet() const
 {
-    return fTestNet;
+    return TestNet();
 }
 
 bool ClientModel::inInitialBlockDownload() const
@@ -104,9 +123,12 @@ enum BlockSource ClientModel::getBlockSource() const
 {
     if (fReindex)
         return BLOCK_SOURCE_REINDEX;
-    if (fImporting)
+    else if (fImporting)
         return BLOCK_SOURCE_DISK;
-    return BLOCK_SOURCE_NETWORK;
+    else if (getNumConnections() > 0)
+        return BLOCK_SOURCE_NETWORK;
+
+    return BLOCK_SOURCE_NONE;
 }
 
 int ClientModel::getNumBlocksOfPeers() const

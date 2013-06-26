@@ -9,7 +9,6 @@
 #include "bitcoinrpc.h"
 #include "db.h"
 #include "init.h"
-#include "main.h"
 #include "net.h"
 #include "wallet.h"
 
@@ -225,6 +224,13 @@ Value listunspent(const Array& params, bool fHelp)
         Object entry;
         entry.push_back(Pair("txid", out.tx->GetHash().GetHex()));
         entry.push_back(Pair("vout", out.i));
+        CTxDestination address;
+        if (ExtractDestination(out.tx->vout[out.i].scriptPubKey, address))
+        {
+            entry.push_back(Pair("address", CBitcoinAddress(address).ToString()));
+            if (pwalletMain->mapAddressBook.count(address))
+                entry.push_back(Pair("account", pwalletMain->mapAddressBook[address]));
+        }
         entry.push_back(Pair("scriptPubKey", HexStr(pk.begin(), pk.end())));
         if (pk.IsPayToScriptHash())
         {
@@ -400,10 +406,7 @@ Value signrawtransaction(const Array& params, bool fHelp)
             bool fGood = vchSecret.SetString(k.get_str());
             if (!fGood)
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key");
-            CKey key;
-            bool fCompressed;
-            CSecret secret = vchSecret.GetSecret(fCompressed);
-            key.SetSecret(secret, fCompressed);
+            CKey key = vchSecret.GetKey();
             tempKeystore.AddKey(key);
         }
     }
@@ -421,7 +424,7 @@ Value signrawtransaction(const Array& params, bool fHelp)
 
             Object prevOut = p.get_obj();
 
-            RPCTypeCheck(prevOut, map_list_of("txid", str_type)("vout", int_type)("scriptPubKey", str_type)("redeemScript",str_type));
+            RPCTypeCheck(prevOut, map_list_of("txid", str_type)("vout", int_type)("scriptPubKey", str_type));
 
             uint256 txid = ParseHashO(prevOut, "txid");
 
@@ -450,12 +453,16 @@ Value signrawtransaction(const Array& params, bool fHelp)
 
             // if redeemScript given and not using the local wallet (private keys
             // given), add redeemScript to the tempKeystore so it can be signed:
-            Value v = find_value(prevOut, "redeemScript");
-            if (fGivenKeys && scriptPubKey.IsPayToScriptHash() && !(v == Value::null))
+            if (fGivenKeys && scriptPubKey.IsPayToScriptHash())
             {
-                vector<unsigned char> rsData(ParseHexV(v, "redeemScript"));
-                CScript redeemScript(rsData.begin(), rsData.end());
-                tempKeystore.AddCScript(redeemScript);
+                RPCTypeCheck(prevOut, map_list_of("txid", str_type)("vout", int_type)("scriptPubKey", str_type)("redeemScript",str_type));
+                Value v = find_value(prevOut, "redeemScript");
+                if (!(v == Value::null))
+                {
+                    vector<unsigned char> rsData(ParseHexV(v, "redeemScript"));
+                    CScript redeemScript(rsData.begin(), rsData.end());
+                    tempKeystore.AddCScript(redeemScript);
+                }
             }
         }
     }
@@ -546,8 +553,9 @@ Value sendrawtransaction(const Array& params, bool fHelp)
         fHave = view.GetCoins(hashTx, existingCoins);
         if (!fHave) {
             // push to local node
-            if (!tx.AcceptToMemoryPool())
-                throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX rejected");
+            CValidationState state;
+            if (!mempool.accept(state, tx, false, NULL))
+                throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX rejected"); // TODO: report validation state
         }
     }
     if (fHave) {

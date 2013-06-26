@@ -1,18 +1,14 @@
 #include "bitcoinamountfield.h"
+
 #include "qvaluecombobox.h"
 #include "bitcoinunits.h"
-
 #include "guiconstants.h"
 
-#include <QLabel>
-#include <QLineEdit>
-#include <QRegExpValidator>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QDoubleSpinBox>
-#include <QComboBox>
 #include <QApplication>
-#include <qmath.h>
+#include <qmath.h> // for qPow()
 
 BitcoinAmountField::BitcoinAmountField(QWidget *parent):
         QWidget(parent), amount(0), currentUnit(-1)
@@ -64,7 +60,9 @@ bool BitcoinAmountField::validate()
     bool valid = true;
     if (amount->value() == 0.0)
         valid = false;
-    if (valid && !BitcoinUnits::parse(currentUnit, text(), 0))
+    else if (!BitcoinUnits::parse(currentUnit, text(), 0))
+        valid = false;
+    else if (amount->value() > BitcoinUnits::maxAmount(currentUnit))
         valid = false;
 
     setValid(valid);
@@ -102,7 +100,7 @@ bool BitcoinAmountField::eventFilter(QObject *object, QEvent *event)
         {
             // Translate a comma into a period
             QKeyEvent periodKeyEvent(event->type(), Qt::Key_Period, keyEvent->modifiers(), ".", keyEvent->isAutoRepeat(), keyEvent->count());
-            qApp->sendEvent(object, &periodKeyEvent);
+            QApplication::sendEvent(object, &periodKeyEvent);
             return true;
         }
     }
@@ -119,7 +117,7 @@ qint64 BitcoinAmountField::value(bool *valid_out) const
 {
     qint64 val_out = 0;
     bool valid = BitcoinUnits::parse(currentUnit, text(), &val_out);
-    if(valid_out)
+    if (valid_out)
     {
         *valid_out = valid;
     }
@@ -149,7 +147,12 @@ void BitcoinAmountField::unitChanged(int idx)
     amount->setDecimals(BitcoinUnits::decimals(currentUnit));
     amount->setMaximum(qPow(10, BitcoinUnits::amountDigits(currentUnit)) - qPow(10, -amount->decimals()));
 
-    if(valid)
+    if (currentUnit == BitcoinUnits::uBTC)
+        amount->setSingleStep(0.01);
+    else
+        amount->setSingleStep(0.001);
+
+    if (valid)
     {
         // If value was valid, re-place it in the widget with the new unit
         setValue(currentValue);

@@ -9,6 +9,8 @@
 */
 class BitcoinUnits: public QAbstractListModel
 {
+    Q_OBJECT
+
 public:
     explicit BitcoinUnits(QObject *parent);
 
@@ -36,6 +38,8 @@ public:
     static QString description(int unit);
     //! Number of Satoshis (1e-8) per unit
     static qint64 factor(int unit);
+    //! Max amount per unit
+    static qint64 maxAmount(int unit);
     //! Number of amount digits (to represent max number of coins)
     static int amountDigits(int unit);
     //! Number of decimals left
@@ -58,6 +62,7 @@ public:
     int rowCount(const QModelIndex &parent) const;
     QVariant data(const QModelIndex &index, int role) const;
     ///@}
+
 private:
     QList<BitcoinUnits::Unit> unitlist;
 };
